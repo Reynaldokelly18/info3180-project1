@@ -4,11 +4,13 @@ Jinja2 Documentation:    https://jinja.palletsprojects.com/
 Werkzeug Documentation:  https://werkzeug.palletsprojects.com/
 This file contains the routes for your application.
 """
-
-from app import app
-from flask import render_template, request, redirect, url_for
-
-
+import os, locale
+from app import app,db
+from flask import render_template, request, redirect, url_for,flash,send_from_directory
+from app.forms import AddProperty 
+from werkzeug.utils import secure_filename
+from .models import Property
+locale.setlocale( locale.LC_ALL, 'en_CA.UTF-8' )
 ###
 # Routing for your application.
 ###
@@ -22,7 +24,7 @@ def home():
 @app.route('/about/')
 def about():
     """Render the website's about page."""
-    return render_template('about.html', name="Mary Jane")
+    return render_template('about.html', name="Reynaldo Kelly")
 
 
 ###
@@ -44,6 +46,56 @@ def send_text_file(file_name):
     file_dot_text = file_name + '.txt'
     return app.send_static_file(file_dot_text)
 
+@app.route('/properties/create', methods =['GET', 'POST'])
+def addproperty():
+    formobject =  AddProperty()
+
+    if request.method == 'GET':
+        return render_template('addproperty.html', formobj = formobject)
+
+
+    if request.method == 'POST':
+        if formobject.validate_on_submit(): 
+            fileobj = request.files['photo']
+            cleanedname = secure_filename(fileobj.filename)
+
+            if fileobj and cleanedname != "" :
+                fileobj = request.files['photo']
+
+                fileobj.save(os.path.join(app.config['UPLOAD_FOLDER'], cleanedname))
+                if fileobj and cleanedname != "" :
+                    newproperty = Property(request.form['propertytitle'],request.form['numberofbedrooms'], request.form['numberofbathrooms'], request.form['location'], request.form['price'], request.form['description'], request.form['Type'], cleanedname)
+                db.session.add(newproperty)
+                db.session.commit()
+                flash('Your Property Was Successfully Added', 'success')
+                return redirect(url_for('displayproperties'))
+    flash_errors(formobject) 
+    return render_template('addproperty.html', formobj = formobject)
+
+
+@app.route('/properties')
+def displayproperties():
+    if request.method == 'GET':
+           properties = Property.query.all()
+    return render_template('properties.html', propertylist = properties, loc =locale)
+
+
+@app.route('/properties/<propertyid>')
+def displayproperty(propertyid):
+    property = Property.query.filter(Property.id==propertyid).all()[0]
+    
+    if property.numberofbedrooms > 1:
+        bedroomlabel = 'Bedrooms'
+    else:
+        bedroomlabel = 'Bedroom'
+
+    if property.numberofbathrooms > 1:
+        bathroomlabel ='Bathrooms'
+    else:
+        bathroomlabel ='Bathroom'
+    
+    return render_template('property.html', singleproperty = property, bathlabel = bathroomlabel, bedlabel = bedroomlabel, loc=locale)
+
 
 @app.after_request
 def add_header(response):
@@ -56,6 +108,9 @@ def add_header(response):
     response.headers['Cache-Control'] = 'public, max-age=0'
     return response
 
+@app.route('/uploads/<filename>')
+def get_image(filename):
+    return send_from_directory(os.path.join(os.getcwd(), app.config['UPLOAD_FOLDER']), filename)
 
 @app.errorhandler(404)
 def page_not_found(error):
